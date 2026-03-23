@@ -170,6 +170,41 @@ fn is_skill_dir(path: &Path) -> bool {
     path.join("SKILL.md").is_file()
 }
 
+fn collect_skill_dirs(base: &Path, entries: &mut Vec<DirEntry>) {
+    let Ok(read_dir) = fs::read_dir(base) else {
+        return;
+    };
+
+    for entry in read_dir.flatten() {
+        let entry_path = entry.path();
+        let entry_name = entry.file_name().to_string_lossy().into_owned();
+
+        if is_hidden_entry(&entry_name, &entry_path) {
+            continue;
+        }
+
+        let Ok(metadata) = fs::symlink_metadata(&entry_path) else {
+            continue;
+        };
+
+        let is_candidate_dir = metadata.is_dir() || metadata.file_type().is_symlink();
+        if !is_candidate_dir {
+            continue;
+        }
+
+        if is_skill_dir(&entry_path) {
+            entries.push(DirEntry {
+                name: entry_name,
+                path: entry_path.to_string_lossy().into_owned(),
+                is_symlink: metadata.file_type().is_symlink(),
+            });
+            continue;
+        }
+
+        collect_skill_dirs(&entry_path, entries);
+    }
+}
+
 fn expand_path(path: &str) -> String {
     let mut expanded = path.to_string();
     
@@ -207,27 +242,7 @@ fn fs_read_dir(path: String) -> Result<Vec<DirEntry>, String> {
     }
 
     let mut entries = Vec::new();
-    if let Ok(read_dir) = fs::read_dir(p) {
-        for entry in read_dir.flatten() {
-            let entry_path = entry.path();
-            let entry_name = entry.file_name().to_string_lossy().into_owned();
-
-            if is_hidden_entry(&entry_name, &entry_path) {
-                continue;
-            }
-
-            if let Ok(metadata) = fs::symlink_metadata(&entry_path) {
-                let is_candidate_dir = metadata.is_dir() || metadata.file_type().is_symlink();
-                if is_candidate_dir && is_skill_dir(&entry_path) {
-                    entries.push(DirEntry {
-                        name: entry_name,
-                        path: entry_path.to_string_lossy().into_owned(),
-                        is_symlink: metadata.file_type().is_symlink(),
-                    });
-                }
-            }
-        }
-    }
+    collect_skill_dirs(p, &mut entries);
     Ok(entries)
 }
 
@@ -262,6 +277,7 @@ fn fs_exists(path: String) -> bool {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             check_environment,

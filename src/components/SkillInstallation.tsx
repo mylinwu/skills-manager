@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../store';
 import { Search, Download, Check, RefreshCw, PackagePlus } from 'lucide-react';
@@ -9,87 +9,140 @@ interface SearchResult {
   description: string;
   version: string;
   author: string;
-  stars?: number;
+  source: string;
 }
 
+interface InstalledSkillEntry {
+  name: string;
+  path: string;
+}
+
+const stripAnsi = (str: string) =>
+  str.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
+
+const matchesInstalledSkill = (installedName: string, skillName: string) =>
+  installedName === skillName || installedName.startsWith(`${skillName}-`);
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export const SkillInstallation: React.FC = () => {
-  const { defaultPlatforms } = useAppStore();
+  const { defaultPlatforms, skillDirs } = useAppStore();
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [installedCount, setInstalledCount] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [installingSkill, setInstallingSkill] = useState<string | null>(null);
-  const [installedNames, setInstalledNames] = useState<string[]>([]);
+  const [installedEntries, setInstalledEntries] = useState<InstalledSkillEntry[]>([]);
 
-  const { skillDirs } = useAppStore();
-
-  const loadInstalledNames = useCallback(async () => {
-    const names: string[] = [];
+  const loadInstalledEntries = useCallback(async (): Promise<InstalledSkillEntry[]> => {
+    const entries: InstalledSkillEntry[] = [];
     for (const dir of skillDirs) {
       try {
-        const rawEntries = await invoke<{ name: string; path: string }[]>('fs_read_dir', { path: dir });
-        names.push(...rawEntries.map(e => e.name));
+        const rawEntries = await invoke<InstalledSkillEntry[]>('fs_read_dir', { path: dir });
+        entries.push(...rawEntries);
       } catch (e) {
         console.warn(`Failed to read dir ${dir}:`, e);
       }
     }
-    setInstalledNames(Array.from(new Set(names)));
+    setInstalledEntries(entries);
+    return entries;
   }, [skillDirs]);
 
   useEffect(() => {
-    loadInstalledNames();
-  }, [loadInstalledNames]);
+    loadInstalledEntries();
+  }, [loadInstalledEntries]);
+
+  const installedNames = useMemo(
+    () => Array.from(new Set(installedEntries.map((entry) => entry.name))),
+    [installedEntries]
+  );
+
+  const isInstalled = useCallback(
+    (skillName: string) => installedNames.some((name) => matchesInstalledSkill(name, skillName)),
+    [installedNames]
+  );
 
   const handleSearch = async () => {
     if (!query.trim()) return;
+
     setResults([]);
     setLoading(true);
     try {
-      const output = await invoke<string>('execute_skills_cli', { args: ['find', query] });
+      const output = await invoke<string>('execute_skills_cli', { args: ['find', query.trim()] });
       const parsedResults: SearchResult[] = [];
-      const lines = output.split('\n');
-      const stripAnsi = (str: string) => str.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
-      for (const rawLine of lines) {
+      const seen = new Set<string>();
+
+      for (const rawLine of output.split('\n')) {
         const line = stripAnsi(rawLine).trim();
-        if (line.includes('@') && !line.startsWith('└') && !line.includes('Install with')) {
-          const parts = line.split(/\s+/);
-          const fullName = parts[0];
-          const [authorRepo, skillName] = fullName.split('@');
-          parsedResults.push({
-            name: skillName || fullName,
-            author: authorRepo || 'unknown',
-            version: 'latest',
-            description: `全网安装量: ${parts[1] || '0'}`,
-          });
-        }
+        if (!line || line.includes('Install with')) continue;
+
+        const firstToken = line.split(/\s+/)[0];
+        const match = /^([^@\s]+)@([^\s]+)$/.exec(firstToken);
+        if (!match) continue;
+
+        const [, source, skillName] = match;
+        const key = `${source}@${skillName}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        parsedResults.push({
+          name: skillName,
+          author: source,
+          source,
+          version: 'latest',
+          description: line,
+        });
       }
+
       setResults(parsedResults);
     } catch (e) {
-      console.error(e);
+      setErrorMsg(String(e));
     } finally {
-      setTimeout(() => setLoading(false), 800);
+      setTimeout(() => setLoading(false), 500);
     }
+  };
+
+  const waitUntilInstalledInSkillDirs = async (skillName: string) => {
+    const retryDelays = [0, 300, 800, 1500];
+
+    for (const delay of retryDelays) {
+      if (delay > 0) await sleep(delay);
+      const refreshedEntries = await loadInstalledEntries();
+      if (refreshedEntries.some((entry) => matchesInstalledSkill(entry.name, skillName))) {
+        return true;
+      }
+    }
+
+    return false;
   };
 
   const handleInstall = async (skill: SearchResult) => {
     try {
       setInstallingSkill(skill.name);
-      if (defaultPlatforms.length > 0) {
-        console.log(`开始安装 ${skill.name} 并自动同步到 ${defaultPlatforms.join(', ')}`);
+
+      // Step 1: always install into the configured skill repository first.
+      await invoke('execute_skills_cli', {
+        args: ['add', skill.source, '--skill', skill.name, '-g', '-y'],
+      });
+
+      const installedInRepo = await waitUntilInstalledInSkillDirs(skill.name);
+      if (!installedInRepo) {
+        throw new Error(`安装命令已执行，但未在“技能目录”中检测到技能 "${skill.name}"。`);
       }
-      
-      const args = ['add', `${skill.author}@${skill.name}`, '-g', '-y'];
-      // if defaultPlatforms are selected, add agents to arguments
+
+      // Step 2: distribute to default agents, but do not use this as the source of truth
+      // for "installed" state in the UI.
       if (defaultPlatforms.length > 0) {
-        args.push('--agent');
-        args.push(...defaultPlatforms);
+        const distributeArgs = ['add', skill.source, '--skill', skill.name, '-g', '-y'];
+        for (const platformId of defaultPlatforms) {
+          distributeArgs.push('--agent', platformId);
+        }
+        await invoke('execute_skills_cli', { args: distributeArgs });
       }
-      
-      await invoke('execute_skills_cli', { args });
-      setInstalledCount(c => c + 1);
-      await loadInstalledNames();
-    } catch(e) {
+
+      setInstalledCount((count) => count + 1);
+    } catch (e) {
       setErrorMsg(String(e));
     } finally {
       setInstallingSkill(null);
@@ -100,8 +153,8 @@ export const SkillInstallation: React.FC = () => {
     <div className="space-y-6 h-full flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-500 relative">
       <div className="flex justify-between items-end">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight mb-2">安装新技能</h2>
-          <p className="text-muted-foreground">搜索并发现社区中的 AI Agent 技能包，一键安装到本地主库。</p>
+          <h2 className="text-2xl font-bold tracking-tight mb-2">安装技能</h2>
+          <p className="text-muted-foreground">搜索社区技能，并安装到本地技能仓库。</p>
         </div>
       </div>
 
@@ -113,7 +166,7 @@ export const SkillInstallation: React.FC = () => {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            placeholder="输入技能名 or 关键词，如 'git', 'react', 'python'..."
+            placeholder="输入技能名或关键词，例如 react、frontend、python"
             className="w-full pl-10 pr-4 py-3 rounded-xl border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all text-sm"
           />
         </div>
@@ -122,7 +175,7 @@ export const SkillInstallation: React.FC = () => {
           disabled={loading}
           className="px-6 py-3 bg-primary text-primary-foreground rounded-xl flex items-center justify-center gap-2 hover:bg-primary/90 transition-all disabled:opacity-50 font-medium text-sm"
         >
-          {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : "搜索技能"}
+          {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : '搜索技能'}
         </button>
       </div>
 
@@ -133,43 +186,50 @@ export const SkillInstallation: React.FC = () => {
               <PackagePlus className="w-10 h-10 opacity-30" />
             </div>
             <div className="max-w-xs">
-              <p className="text-lg font-semibold text-foreground">没有找到技能？</p>
-              <p className="text-sm mt-1">请输入搜索内容并回车。我们将通过调用 `skills find` 指令为您查找。</p>
+              <p className="text-lg font-semibold text-foreground">还没有搜索结果</p>
+              <p className="text-sm mt-1">输入关键词后回车或点击搜索，应用会调用 `skills find` 查找技能。</p>
             </div>
           </div>
         ) : (
           <div className="flex-1 overflow-auto p-6 grid lg:grid-cols-2 gap-4 auto-rows-min">
-            {results.map(skill => (
-              <div key={skill.name} className="p-5 rounded-2xl border border-border/50 bg-background/50 hover:bg-card hover:border-primary/50 transition-all flex flex-col justify-between group">
+            {results.map((skill) => (
+              <div
+                key={`${skill.source}@${skill.name}`}
+                className="p-5 rounded-2xl border border-border/50 bg-background/50 hover:bg-card hover:border-primary/50 transition-all flex flex-col justify-between group"
+              >
                 <div>
                   <div className="flex justify-between items-start mb-3">
-                    <h3 className="font-bold text-lg text-foreground group-hover:text-primary transition-colors">{skill.name}</h3>
+                    <h3 className="font-bold text-lg text-foreground group-hover:text-primary transition-colors">
+                      {skill.name}
+                    </h3>
                   </div>
                   <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed mb-4">{skill.description}</p>
                   <div className="flex flex-wrap gap-2 mb-4">
-                    <span className="px-2 py-0.5 bg-muted rounded text-[10px] text-muted-foreground border border-border/20">@{skill.author}</span>
+                    <span className="px-2 py-0.5 bg-muted rounded text-[10px] text-muted-foreground border border-border/20">
+                      {skill.source}
+                    </span>
                   </div>
                 </div>
 
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleInstall(skill)}
-                    disabled={installedNames.includes(skill.name)}
+                    disabled={isInstalled(skill.name)}
                     className={`flex-1 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all text-sm ${
-                      installedNames.includes(skill.name) 
-                      ? "bg-secondary text-secondary-foreground cursor-default border border-border/50" 
-                      : "bg-primary text-primary-foreground hover:bg-primary/90"
+                      isInstalled(skill.name)
+                        ? 'bg-secondary text-secondary-foreground cursor-default border border-border/50'
+                        : 'bg-primary text-primary-foreground hover:bg-primary/90'
                     }`}
                   >
-                    {installedNames.includes(skill.name) ? (
+                    {isInstalled(skill.name) ? (
                       <>
                         <Check className="w-4 h-4 text-green-500" />
-                        已安装到本地
+                        已安装
                       </>
                     ) : (
                       <>
                         <Download className="w-4 h-4" />
-                        立即安装
+                        安装
                       </>
                     )}
                   </button>
@@ -179,7 +239,6 @@ export const SkillInstallation: React.FC = () => {
           </div>
         )}
 
-        {/* Global Installation Overlay */}
         {installingSkill && (
           <div className="fixed inset-0 bg-background/40 backdrop-blur-[1px] z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
             <div className="relative">
@@ -192,20 +251,20 @@ export const SkillInstallation: React.FC = () => {
         )}
       </div>
 
-    {installedCount > 0 && (
-      <div className="fixed bottom-8 right-8 animate-in slide-in-from-right-10 flex items-center gap-3 bg-green-500 text-white px-6 py-4 rounded-2xl font-bold z-50">
-        <Check className="w-5 h-5" />
-        已成功安装 {installedCount} 个新技能！
-      </div>
-    )}
+      {installedCount > 0 && (
+        <div className="fixed bottom-8 right-8 animate-in slide-in-from-right-10 flex items-center gap-3 bg-green-500 text-white px-6 py-4 rounded-2xl font-bold z-50">
+          <Check className="w-5 h-5" />
+          已安装 {installedCount} 个技能
+        </div>
+      )}
 
-    <AlertModal 
-      isOpen={!!errorMsg} 
-      onClose={() => setErrorMsg(null)} 
-      title="安装失败" 
-      message={errorMsg || ''} 
-      type="danger" 
-    />
-  </div>
+      <AlertModal
+        isOpen={!!errorMsg}
+        onClose={() => setErrorMsg(null)}
+        title="安装失败"
+        message={errorMsg || ''}
+        type="danger"
+      />
+    </div>
   );
 };
