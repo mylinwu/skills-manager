@@ -5,9 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build:web": "tsc && vite build",
+    "build": "pnpm run release:validate && pnpm run build:web",
     "preview": "vite preview",
-    "tauri": "tauri dev"
+    "tauri:dev": "pnpm exec tauri dev",
+    "tauri:build": "node scripts/release/build-bundle.mjs auto",
+    "tauri:build:auto": "node scripts/release/build-bundle.mjs auto",
+    "tauri:build:windows": "node scripts/release/build-bundle.mjs windows",
+    "tauri:build:macos": "node scripts/release/build-bundle.mjs macos",
+    "release:validate": "node scripts/release/version-manager.mjs validate",
+    "release:sync": "node scripts/release/version-manager.mjs sync",
+    "release:prepare": "node scripts/release/version-manager.mjs prepare"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.1",

@@ -22,7 +22,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
       <aside className="flex w-64 flex-col border-r border-border bg-card/50 backdrop-blur-sm">
         <div className="p-6">
           <h1 className="flex items-center gap-2 text-xl font-bold text-primary">
-            <Package className="h-6 w-6" />
+            <img src="/skills-manager-icon.svg" alt="" className="h-8 w-8 rounded-xl shadow-sm" />
             Skills Manager
           </h1>
         </div>
@@ -54,10 +54,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
             );
           })}
         </nav>
-
-        <div className="border-t border-border p-4">
-          <div className="text-center text-xs text-muted-foreground">v1.0.0</div>
-        </div>
       </aside>
 
       <main className="relative flex-1 overflow-auto bg-background/50">
