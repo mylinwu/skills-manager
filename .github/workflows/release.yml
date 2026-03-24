@@ -16,8 +16,6 @@ jobs:
         include:
           - os: windows-latest
             args: --bundles nsis
-          - os: macos-latest
-            args: --bundles dmg
 
     runs-on: ${{ matrix.os }}
     env:
