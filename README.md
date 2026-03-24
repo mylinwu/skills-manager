@@ -82,7 +82,9 @@ pnpm tauri:build:macos
 
 ## 从 Releases 获取
 
-项目支持通过 GitHub Releases 分发桌面安装包。
+项目支持通过 GitHub Releases 分发桌面安装包：
+
+[GitHub Releases](https://github.com/mylinwu/skills-manager/releases)
 
 - Windows：下载最新 Release 中的 NSIS `.exe` 安装包
 - macOS：下载最新 Release 中的 `.dmg`
@@ -114,7 +116,6 @@ docs/                 产品与发版相关文档
 
 ## 已知说明
 
-- 当前仓库没有写入 GitHub 仓库专属链接字段；等最终公开仓库地址确定后，再补 `repository`、`homepage`、`bugs` 等元信息。
 - Release 打包链路已存在，但签名和 notarization 是否启用，取决于后续是否配置对应 secrets。
 - README 当前直接使用现有截图，未额外做脱敏处理。
 
@@ -122,6 +123,7 @@ docs/                 产品与发版相关文档
 
 欢迎提交 Issue 和 Pull Request。开始贡献前，请先阅读：
 
+- [Issue 列表](https://github.com/mylinwu/skills-manager/issues)
 - [贡献指南](./CONTRIBUTING.md)
 - [安全策略](./SECURITY.md)
 - [行为准则](./CODE_OF_CONDUCT.md)

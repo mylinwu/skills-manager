@@ -4,6 +4,14 @@
   "version": "0.1.0",
   "description": "A Tauri desktop app for managing local AI coding skills and distributing them across different clients.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mylinwu/skills-manager.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mylinwu/skills-manager/issues"
+  },
+  "homepage": "https://github.com/mylinwu/skills-manager",
   "type": "module",
   "scripts": {
     "dev": "vite",
