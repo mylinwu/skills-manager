@@ -29,6 +29,7 @@ type LoadOptions = {
 };
 
 interface AppState {
+  hasHydrated: boolean;
   envPassed: boolean;
   activeTab: AppTab;
   skillDirs: string[];
@@ -53,6 +54,7 @@ interface AppState {
   distributionSkills: SkillStatus[];
   distributionLoading: boolean;
   distributionLoadedKey: string | null;
+  markHydrated: () => void;
   setActiveTab: (tab: AppTab) => void;
   markEnvironmentPassed: () => void;
   resetEnvironmentCheck: () => void;
@@ -142,6 +144,7 @@ const normalizeSelectedPlatformId = (
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
+      hasHydrated: false,
       envPassed: false,
       activeTab: 'skills',
       skillDirs: [],
@@ -166,6 +169,7 @@ export const useAppStore = create<AppState>()(
       distributionSkills: [],
       distributionLoading: false,
       distributionLoadedKey: null,
+      markHydrated: () => set({ hasHydrated: true }),
       setActiveTab: (tab) => set({ activeTab: tab }),
       markEnvironmentPassed: () => set({ envPassed: true }),
       resetEnvironmentCheck: () => set({ envPassed: false }),
@@ -469,6 +473,7 @@ export const useAppStore = create<AppState>()(
         state.restoreMissingDefaultPlatforms();
         state.ensureSelectedPlatform();
         void state.checkAndAddDefaultDir();
+        state.markHydrated();
       },
     }
   )

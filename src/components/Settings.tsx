@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Check,
@@ -8,10 +8,11 @@ import {
   Monitor,
   Plus,
   Trash2,
+  XCircle,
 } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { isWindowsClient } from '../lib/path';
-import { revealPath } from '../services/fs-service';
+import { isDirectory, revealPath } from '../services/fs-service';
 import { runEnvironmentCheck } from '../services/skills-cli-service';
 import { useAppStore } from '../store';
 import type { PlatformConfig } from '../platform-types';
@@ -41,13 +42,69 @@ export const SettingsPanel: React.FC = () => {
   const [editForm, setEditForm] = useState<PlatformConfig>(createNewPlatform());
   const [alertMsg, setAlertMsg] = useState<{ title: string; msg: string; success?: boolean } | null>(null);
   const [confirmingPlatform, setConfirmingPlatform] = useState<PlatformConfig | null>(null);
+  const [dirStatus, setDirStatus] = useState<Record<string, 'checking' | 'valid' | 'invalid'>>({});
 
   const isModalOpen = editingId !== null;
   const isCreating = editingId === 'new';
   const currentPathValue = isWindowsClient ? editForm.windowsPath : editForm.unixPath;
   const modalTitle = useMemo(() => (isCreating ? '新增平台' : '编辑平台'), [isCreating]);
 
-  const handleAddDir = () => {
+  useEffect(() => {
+    let cancelled = false;
+
+    const validateDirs = async () => {
+      if (skillDirs.length === 0) {
+        setDirStatus({});
+        return;
+      }
+
+      setDirStatus((current) => {
+        const next: Record<string, 'checking' | 'valid' | 'invalid'> = {};
+        for (const dir of skillDirs) {
+          next[dir] = current[dir] ?? 'checking';
+        }
+        return next;
+      });
+
+      const nextEntries = await Promise.all(
+        skillDirs.map(async (dir) => {
+          try {
+            const valid = await isDirectory(dir);
+            return [dir, valid ? 'valid' : 'invalid'] as const;
+          } catch {
+            return [dir, 'invalid'] as const;
+          }
+        })
+      );
+
+      if (!cancelled) {
+        setDirStatus(
+          Object.fromEntries(nextEntries) as Record<string, 'checking' | 'valid' | 'invalid'>
+        );
+      }
+    };
+
+    void validateDirs();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [skillDirs]);
+
+  const getDirStatusView = (dir: string) => {
+    switch (dirStatus[dir] ?? 'checking') {
+      case 'invalid':
+        return {
+          icon: XCircle,
+          label: '无效目录',
+          className: 'border-destructive/20 bg-destructive/10 text-destructive',
+        };
+      default:
+        return null;
+    }
+  };
+
+  const handleAddDir = async () => {
     const nextDir = newDir.trim();
     if (!nextDir) {
       return;
@@ -58,8 +115,21 @@ export const SettingsPanel: React.FC = () => {
       return;
     }
 
-    setSkillDirs([...skillDirs, nextDir]);
-    setNewDir('');
+    try {
+      const valid = await isDirectory(nextDir);
+      if (!valid) {
+        setAlertMsg({
+          title: '目录不可用',
+          msg: '该路径不存在，或不是一个可读取的目录。',
+        });
+        return;
+      }
+
+      setSkillDirs([...skillDirs, nextDir]);
+      setNewDir('');
+    } catch (error) {
+      setAlertMsg({ title: '目录检查失败', msg: String(error) });
+    }
   };
 
   const handleRemoveDir = (dir: string) => {
@@ -203,6 +273,23 @@ export const SettingsPanel: React.FC = () => {
               className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/50 p-3"
             >
               <div className="min-w-0 flex-1 text-sm text-foreground">
+                {(() => {
+                  const statusView = getDirStatusView(dir);
+                  if (!statusView) {
+                    return null;
+                  }
+
+                  const Icon = statusView.icon;
+
+                  return (
+                    <span
+                      className={`mb-3 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusView.className}`}
+                    >
+                      <Icon className="h-3 w-3" />
+                      {statusView.label}
+                    </span>
+                  );
+                })()}
                 <span className="inline-flex max-w-full items-center align-top">
                   <code className="truncate">{dir}</code>
                   <button
@@ -233,12 +320,12 @@ export const SettingsPanel: React.FC = () => {
               className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
               onKeyDown={(event) => {
                 if (event.key === 'Enter') {
-                  handleAddDir();
+                  void handleAddDir();
                 }
               }}
             />
             <button
-              onClick={handleAddDir}
+              onClick={() => void handleAddDir()}
               className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
             >
               <Plus className="h-4 w-4" />

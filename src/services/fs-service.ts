@@ -32,4 +32,7 @@ export const writeTextFile = (path: string, contents: string) =>
 export const pathExists = (path: string) =>
   invoke<boolean>('fs_exists', { path });
 
+export const isDirectory = (path: string) =>
+  invoke<boolean>('fs_is_directory', { path });
+
 export const revealPath = (path: string) => revealItemInDir(path);

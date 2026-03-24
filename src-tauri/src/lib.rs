@@ -292,6 +292,12 @@ fn fs_exists(path: String) -> bool {
     Path::new(&expanded_path).exists()
 }
 
+#[tauri::command]
+fn fs_is_directory(path: String) -> bool {
+    let expanded_path = expand_path(&path);
+    Path::new(&expanded_path).is_dir()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -306,7 +312,8 @@ pub fn run() {
             fs_read_dir,
             fs_read_text_file,
             fs_write_text_file,
-            fs_exists
+            fs_exists,
+            fs_is_directory
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
