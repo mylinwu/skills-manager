@@ -1,0 +1,29 @@
+name: Feature request
+description: Suggest an improvement for Skills Manager
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. Explain the problem first, then describe the desired outcome.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What workflow, limitation, or pain point are you trying to address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior or UX you want to see.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add screenshots, related tools/platforms, or alternative approaches if useful.
