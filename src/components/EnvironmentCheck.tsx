@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { AlertCircle, CheckCircle2, RotateCw, Copy } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { AlertCircle, CheckCircle2, Copy, RotateCw } from 'lucide-react';
+import { runEnvironmentCheck } from '../services/skills-cli-service';
 
 export const EnvironmentCheck: React.FC<{ onPass: () => void }> = ({ onPass }) => {
   const [status, setStatus] = useState<'checking' | 'passed' | 'failed'>('checking');
@@ -8,98 +8,105 @@ export const EnvironmentCheck: React.FC<{ onPass: () => void }> = ({ onPass }) =
 
   const checkEnv = async () => {
     setStatus('checking');
+    setErrorText('');
+
     try {
-      const isOk = await invoke<boolean>('check_environment');
+      const isOk = await runEnvironmentCheck();
       if (isOk) {
         setStatus('passed');
-        setTimeout(onPass, 1000);
-      } else {
-        setStatus('failed');
+        window.setTimeout(onPass, 1000);
+        return;
       }
-    } catch (e) {
-      console.error(e);
+
       setStatus('failed');
-      setErrorText(String(e));
+    } catch (error) {
+      console.error(error);
+      setStatus('failed');
+      setErrorText(String(error));
     }
   };
 
   useEffect(() => {
-    checkEnv();
+    void checkEnv();
   }, []);
 
   const copyCommand = () => {
-    navigator.clipboard.writeText('npm install -g skills');
+    void navigator.clipboard.writeText('npm i -g @linwu/skills-cli');
   };
 
   return (
-    <div className="flex h-screen items-center justify-center bg-background p-4 relative overflow-hidden">
-      <div className="absolute top-1/4 -left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-3xl opacity-50 mix-blend-multiply animate-pulse" />
-      <div className="absolute bottom-1/4 -right-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl opacity-50 mix-blend-multiply animate-pulse" style={{ animationDelay: '1s' }} />
+    <div className="relative flex h-screen items-center justify-center overflow-hidden bg-background p-4">
+      <div className="absolute top-1/4 -left-1/4 h-96 w-96 animate-pulse rounded-full bg-primary/20 opacity-50 blur-3xl mix-blend-multiply" />
+      <div
+        className="absolute right-[-25%] bottom-1/4 h-96 w-96 animate-pulse rounded-full bg-blue-500/20 opacity-50 blur-3xl mix-blend-multiply"
+        style={{ animationDelay: '1s' }}
+      />
 
-      <div className="bg-card w-full max-w-lg rounded-2xl p-8 border border-border shadow-2xl relative z-10">
-        <div className="flex flex-col items-center text-center space-y-6">
+      <div className="relative z-10 w-full max-w-lg rounded-2xl border border-border bg-card p-8 shadow-2xl">
+        <div className="flex flex-col items-center space-y-6 text-center">
           {status === 'checking' && (
             <>
-              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center animate-spin">
-                <RotateCw className="w-8 h-8 text-primary" />
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 animate-spin">
+                <RotateCw className="h-8 w-8 text-primary" />
               </div>
               <div>
-                <h2 className="text-2xl font-bold tracking-tight">正在检测核心环境</h2>
-                <p className="text-muted-foreground mt-2 text-sm">正在验证 Node.js 与 Skills CLI 是否可用...</p>
+                <h2 className="text-2xl font-bold tracking-tight">正在检查运行环境</h2>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  正在验证 Node.js 和 Skills CLI 是否可用...
+                </p>
               </div>
             </>
           )}
 
           {status === 'passed' && (
             <>
-              <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center">
-                <CheckCircle2 className="w-8 h-8 text-green-500" />
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-500/10">
+                <CheckCircle2 className="h-8 w-8 text-green-500" />
               </div>
               <div>
-                <h2 className="text-2xl font-bold tracking-tight text-green-500">环境检测通过</h2>
-                <p className="text-muted-foreground mt-2 text-sm">正在进入系统主界面...</p>
+                <h2 className="text-2xl font-bold tracking-tight text-green-500">环境检查通过</h2>
+                <p className="mt-2 text-sm text-muted-foreground">正在进入主界面...</p>
               </div>
             </>
           )}
 
           {status === 'failed' && (
             <>
-              <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center">
-                <AlertCircle className="w-8 h-8 text-destructive" />
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
+                <AlertCircle className="h-8 w-8 text-destructive" />
               </div>
               <div>
-                <h2 className="text-2xl font-bold tracking-tight text-destructive">环境检测失败</h2>
-                <p className="text-muted-foreground mt-2 text-sm">
-                  未检测到 `skills` 工具
-                  或 Node.js 环境异常。
+                <h2 className="text-2xl font-bold tracking-tight text-destructive">环境检查失败</h2>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  未检测到可用的 Skills CLI 或 Node.js 环境异常。
                 </p>
-                {errorText && <p className="text-xs text-destructive/80 mt-2">{errorText}</p>}
+                {errorText && <p className="mt-2 text-xs text-destructive/80">{errorText}</p>}
               </div>
 
-              <div className="w-full bg-muted/50 p-4 rounded-lg flex items-center justify-between border border-border">
+              <div className="flex w-full items-center justify-between rounded-lg border border-border bg-muted/50 p-4">
                 <code className="text-sm">npm i -g @linwu/skills-cli</code>
                 <button
                   onClick={copyCommand}
-                  className="p-2 hover:bg-muted rounded-md transition-colors"
+                  className="rounded-md p-2 transition-colors hover:bg-muted"
                   title="复制命令"
                 >
-                  <Copy className="w-4 h-4 text-muted-foreground" />
+                  <Copy className="h-4 w-4 text-muted-foreground" />
                 </button>
               </div>
 
-              <div className="flex w-full gap-3 mt-4">
+              <div className="mt-4 flex w-full gap-3">
                 <button
                   onClick={onPass}
-                  className="flex-1 px-4 py-2 rounded-lg border border-border bg-card text-foreground hover:bg-muted transition-colors font-medium text-sm"
+                  className="flex-1 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
                 >
-                  跳过 (调试)
+                  跳过（调试）
                 </button>
                 <button
-                  onClick={checkEnv}
-                  className="flex-1 flex gap-2 items-center justify-center px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-all font-medium text-sm shadow-md"
+                  onClick={() => void checkEnv()}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-md transition-all hover:bg-primary/90"
                 >
-                  <RotateCw className="w-4 h-4" />
-                  重新检测
+                  <RotateCw className="h-4 w-4" />
+                  重新检查
                 </button>
               </div>
             </>

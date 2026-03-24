@@ -148,6 +148,8 @@ struct DirEntry {
     name: String,
     path: String,
     is_symlink: bool,
+    exists: bool,
+    has_skill_manifest: bool,
 }
 
 fn is_hidden_entry(name: &str, path: &Path) -> bool {
@@ -192,11 +194,27 @@ fn collect_skill_dirs(base: &Path, entries: &mut Vec<DirEntry>) {
             continue;
         }
 
-        if is_skill_dir(&entry_path) {
+        let exists = entry_path.exists();
+        let has_skill_manifest = exists && is_skill_dir(&entry_path);
+
+        if metadata.file_type().is_symlink() && !exists {
+            entries.push(DirEntry {
+                name: entry_name,
+                path: entry_path.to_string_lossy().into_owned(),
+                is_symlink: true,
+                exists: false,
+                has_skill_manifest: false,
+            });
+            continue;
+        }
+
+        if has_skill_manifest {
             entries.push(DirEntry {
                 name: entry_name,
                 path: entry_path.to_string_lossy().into_owned(),
                 is_symlink: metadata.file_type().is_symlink(),
+                exists: true,
+                has_skill_manifest: true,
             });
             continue;
         }
